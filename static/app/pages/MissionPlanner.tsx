@@ -4,13 +4,14 @@ import type { CreateMissionRequest } from "@/types/mission";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { LatLng } from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
     MapContainer,
     Marker,
     Polygon,
     Popup,
     TileLayer,
+    useMap,
     useMapEvents,
 } from "react-leaflet";
 import { useNavigate } from "react-router-dom";
@@ -52,6 +53,28 @@ function MapClickHandler({
     return null;
 }
 
+function MapCenter({ newLocation }: { newLocation: NewLocation | null }) {
+    const map = useMap();
+
+    useEffect(() => {
+        if (newLocation)
+            map.flyTo([newLocation.lat, newLocation.lon], 13);
+    }, [newLocation, map]);
+
+    return null;
+}
+
+type PlaceSuggestions = {
+    display_name: string;
+    lat: number;
+    lon: number;
+};
+
+type NewLocation = {
+    lat: number;
+    lon: number;
+};
+
 export default function MissionPlanner() {
     const queryClient = useQueryClient();
     const navigate = useNavigate();
@@ -65,6 +88,14 @@ export default function MissionPlanner() {
         speed: 10,
         overlap: 70,
     });
+    const [loading, setLoading] = useState(false);
+    const [search, setSearch] = useState("");
+    const [suggestion, setSuggestion] = useState<PlaceSuggestions[]>([]);
+    const [showDropDown, setShowDropDown] = useState(false);
+    const [selectedSuggestionIndex, setSelectedSuggestionIndex] =
+        useState<number>(-1);
+    const [newLocation, setNewLocation] = useState<NewLocation | null>(null);
+    const listRef = useRef<(HTMLLIElement | null)[]>([]);
 
     // Fetch all bases
     const { data: basesData } = useQuery({
@@ -130,6 +161,76 @@ export default function MissionPlanner() {
         });
     };
 
+    useEffect(() => {
+        if (!search.trim()) {
+            setSuggestion([]);
+            setShowDropDown(false);
+            setLoading(false);
+            return;
+        }
+
+        const controller = new AbortController();
+        const { signal } = controller;
+
+        const fetchData = async () => {
+            setShowDropDown(true);
+            setLoading(true);
+            try {
+                const response = await fetch(
+                    `https://nominatim.openstreetmap.org/search?q=${search}&format=jsonv2`,
+                    { signal },
+                );
+                const data: PlaceSuggestions[] = await response.json();
+                setSuggestion(data);
+            } catch (error) {
+                if (error !== "AbortError")
+                    console.error("Error fetching search results:", error);
+            } finally {
+                setLoading(false);
+            }
+        };
+        fetchData();
+
+        return () => {
+            controller.abort();
+        };
+    }, [search]);
+
+    useEffect(() => {
+        const selectedItem = listRef.current[selectedSuggestionIndex];
+
+        selectedItem?.scrollIntoView({
+            block: "nearest",
+            behavior: "smooth",
+        });
+    }, [selectedSuggestionIndex]);
+
+    const handleSuggestionClick = (item: PlaceSuggestions) => {
+        setNewLocation({ lat: item.lat, lon: item.lon });
+        setShowDropDown(false);
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === "ArrowDown") {
+            e.preventDefault();
+            setSelectedSuggestionIndex((prevIndex) =>
+                Math.min(prevIndex + 1, suggestion.length - 1),
+            );
+        } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            setSelectedSuggestionIndex((prevIndex) =>
+                Math.max(prevIndex - 1, 0),
+            );
+        } else if (e.key === "Enter") {
+            e.preventDefault();
+            if (suggestion[selectedSuggestionIndex]) {
+                handleSuggestionClick(suggestion[selectedSuggestionIndex]);
+                setSuggestion([]);
+                setShowDropDown(false);
+            }
+        }
+    };
+
     return (
         <div className="p-8">
             <div className="mb-8">
@@ -137,7 +238,7 @@ export default function MissionPlanner() {
                     Mission Planner
                 </h1>
                 <p className="mt-2 text-muted-foreground">
-                    Plan and configure drone survey missions
+                    Plan and configure drone tasks
                 </p>
             </div>
 
@@ -148,13 +249,67 @@ export default function MissionPlanner() {
                             <h2 className="text-lg font-semibold text-card-foreground">
                                 Survey Area (Select atleast 3 points in the map)
                             </h2>
-                            {polygonPoints.length > 0 && (
+                            {polygonPoints.length > 0 ? (
                                 <button
                                     onClick={handleClearPolygon}
-                                    className="text-sm text-muted-foreground hover:text-foreground px-3 py-1 rounded border"
+                                    className="text-[12px] text-muted-foreground hover:text-foreground px-3 py-1 rounded border"
                                 >
                                     Clear ({polygonPoints.length} points)
                                 </button>
+                            ) : (
+                                <div className="w-1/3 relative">
+                                    <input
+                                        name="Search Input"
+                                        className="text-[12px] w-full px-3 py-1 bg-background border rounded-md text-foreground"
+                                        type="text"
+                                        value={search}
+                                        onChange={(e) =>
+                                            setSearch(e.target.value)
+                                        }
+                                        onKeyDown={handleKeyDown}
+                                        placeholder="Enter city, address, or country..."
+                                    />
+                                    {showDropDown &&
+                                        (loading || suggestion.length > 0) && (
+                                            <ul className="suggestion-dropdown w-full absolute bg-white rounded-md list-none p-0 m-0 max-h-[200px] overflow-y-auto z-[1000] shadow-[0_4px_6px_rgba(0,0,0,0.1)]">
+                                                {loading ? (
+                                                    <li className="px-2 py-1">
+                                                        Loading...
+                                                    </li>
+                                                ) : (
+                                                    suggestion.map(
+                                                        (item, index) => (
+                                                            <li
+                                                                ref={(
+                                                                    element,
+                                                                ) => {
+                                                                    listRef.current[
+                                                                        index
+                                                                    ] = element;
+                                                                }}
+                                                                key={`${item.lat}-${item.lon}`}
+                                                                className={`suggestion-item cursor-pointer border-b px-2 py-1 hover:bg-gray-300 ${index === selectedSuggestionIndex && "bg-gray-300"}`}
+                                                                onClick={() =>
+                                                                    setSelectedSuggestionIndex(
+                                                                        index,
+                                                                    )
+                                                                }
+                                                                onMouseDown={() =>
+                                                                    handleSuggestionClick(
+                                                                        item
+                                                                    )
+                                                                }
+                                                            >
+                                                                {
+                                                                    item.display_name
+                                                                }
+                                                            </li>
+                                                        ),
+                                                    )
+                                                )}
+                                            </ul>
+                                        )}
+                                </div>
                             )}
                         </div>
                         <div className="h-[600px]">
@@ -168,6 +323,8 @@ export default function MissionPlanner() {
                                     attribution='&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
                                 />
                                 <MapClickHandler onMapClick={handleMapClick} />
+
+                                <MapCenter newLocation={newLocation} />
 
                                 {/* Base markers */}
                                 {bases.map((base: any) => (
