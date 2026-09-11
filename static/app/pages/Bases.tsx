@@ -11,7 +11,7 @@ import {
     Marker,
     Popup,
     useMap,
-    useMapEvents
+    useMapEvents,
 } from "react-leaflet";
 
 // Map Click Handler Component
@@ -421,8 +421,10 @@ export default function Bases() {
                         className="z-0"
                     >
                         <TileLayer
-                            url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-                            attribution='&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                            url="https://tile.openstreetmap.org/{z}/{x}/{y}.png?app=MyReactAppName&contact=prateek0426@gmail.com"
+                            attribution='&copy; <a href="https://openstreetmap.org">OpenStreetMap</a> contributors'
+                            keepBuffer={2}
+                            updateWhenIdle={true}
                         />
                         <MapClickHandler onMapClick={handleMapClick} />
                         <MapCenterController

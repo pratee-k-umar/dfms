@@ -772,8 +772,10 @@ export default function Analytics() {
                                                 }}
                                             >
                                                 <TileLayer
-                                                    url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-                                                    attribution='&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                                                    url="https://tile.openstreetmap.org/{z}/{x}/{y}.png?app=MyReactAppName&contact=prateek0426@gmail.com"
+                                                    attribution='&copy; <a href="https://openstreetmap.org">OpenStreetMap</a> contributors'
+                                                    keepBuffer={2}
+                                                    updateWhenIdle={true}
                                                 />
 
                                                 {/* Coverage Area Polygon */}
