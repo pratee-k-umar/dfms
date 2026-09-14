@@ -15,9 +15,11 @@ import {
     useMapEvents,
 } from "react-leaflet";
 import { useNavigate } from "react-router-dom";
+// import { area } from "@turf/area";
 
 // Fix Leaflet icon issue
 import L from "leaflet";
+import { toast, Toaster } from "sonner";
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
     iconRetinaUrl:
@@ -57,8 +59,7 @@ function MapCenter({ newLocation }: { newLocation: NewLocation | null }) {
     const map = useMap();
 
     useEffect(() => {
-        if (newLocation)
-            map.flyTo([newLocation.lat, newLocation.lon], 13);
+        if (newLocation) map.flyTo([newLocation.lat, newLocation.lon], 13);
     }, [newLocation, map]);
 
     return null;
@@ -96,6 +97,8 @@ export default function MissionPlanner() {
         useState<number>(-1);
     const [newLocation, setNewLocation] = useState<NewLocation | null>(null);
     const listRef = useRef<(HTMLLIElement | null)[]>([]);
+    // const [polygonDist, setPolygonDist] = useState<number[]>([]);
+    // const polygonArea = useState(null);
 
     // Fetch all bases
     const { data: basesData } = useQuery({
@@ -124,8 +127,56 @@ export default function MissionPlanner() {
         },
     });
 
-    const handleMapClick = (latlng: LatLng) => {
-        setPolygonPoints([...polygonPoints, latlng]);
+    const handleMapClick = (point: LatLng) => {
+        const lastPoint = polygonPoints[polygonPoints.length - 1];
+        
+        if(lastPoint) {
+            const distance = lastPoint.distanceTo(point);
+            if (distance > 5000) {
+                toast.error("Distance between the points exceeds 5000 meters. Please select a closer point.");
+                return;
+            }
+
+            // setPolygonDist((prevDistances) => [...prevDistances, distance]);
+        }
+        
+        const updatedPoints = [...polygonPoints, point];
+
+        if(updatedPoints.length >= 5) {
+            const avg_lat = updatedPoints.reduce((sum, currentPoint) => {
+                return sum + currentPoint.lat;
+            }, 0) / updatedPoints.length;
+
+            const lat_to_meters = 111000;
+            const lon_to_meters = 111000 * Math.cos((avg_lat * Math.PI) / 180);
+
+            const coordinates_in_meters = updatedPoints.map((p) => ({
+                x: p.lng * lon_to_meters,
+                y: p.lat * lat_to_meters
+            }));
+
+            let polygonArea = 0;
+
+            for(let i = 0; i < coordinates_in_meters.length; i++) {
+                const next_idx = (i + 1) % coordinates_in_meters.length;
+
+                polygonArea += coordinates_in_meters[i].x * coordinates_in_meters[next_idx].y;
+                polygonArea -= coordinates_in_meters[next_idx].x * coordinates_in_meters[i].y;
+            }
+
+            polygonArea = Math.abs(polygonArea / 2);
+
+            if(polygonArea > 100000) {
+                toast.error("The area of the polygon exceeds 100,000 square meters. Please select points that form a smaller area.");
+                return;
+            }
+        }
+
+        setPolygonPoints(updatedPoints);
+    };
+
+    const handleClearLastPolygonPoint = () => {
+        setPolygonPoints((previousPoints) => previousPoints.slice(0, -1));
     };
 
     const handleClearPolygon = () => {
@@ -241,21 +292,31 @@ export default function MissionPlanner() {
                     Plan and configure drone tasks
                 </p>
             </div>
-
+            <Toaster position="top-right" />
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-2">
                     <div className="bg-card rounded-lg border shadow-sm overflow-hidden">
                         <div className="px-6 py-4 border-b flex items-center justify-between">
-                            <h2 className="text-lg font-semibold text-card-foreground">
-                                Survey Area (Select atleast 3 points in the map)
+                            <h2 className="text-[17px] font-semibold text-card-foreground">
+                                Map out Survey Area (Select atleast 3 points in
+                                the map)
                             </h2>
                             {polygonPoints.length > 0 ? (
-                                <button
-                                    onClick={handleClearPolygon}
-                                    className="text-[12px] text-muted-foreground hover:text-foreground px-3 py-1 rounded border"
-                                >
-                                    Clear ({polygonPoints.length} points)
-                                </button>
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={handleClearPolygon}
+                                        className="text-[12px] text-muted-foreground hover:text-foreground px-3 py-1 rounded border"
+                                    >
+                                        Clear ({polygonPoints.length} points)
+                                    </button>
+                                    <button
+                                        onClick={handleClearLastPolygonPoint}
+                                        disabled={polygonPoints.length === 1}
+                                        className="text-[12px] text-muted-foreground hover:text-foreground px-3 py-1 rounded border disabled:cursor-not-allowed"
+                                    >
+                                        Clear previous point
+                                    </button>
+                                </div>
                             ) : (
                                 <div className="w-1/3 relative">
                                     <input
@@ -296,7 +357,7 @@ export default function MissionPlanner() {
                                                                 }
                                                                 onMouseDown={() =>
                                                                     handleSuggestionClick(
-                                                                        item
+                                                                        item,
                                                                     )
                                                                 }
                                                             >
@@ -312,7 +373,7 @@ export default function MissionPlanner() {
                                 </div>
                             )}
                         </div>
-                        <div className="h-[600px]">
+                        <div className="h-[613px]">
                             <MapContainer
                                 center={[20.5937, 78.9629]}
                                 zoom={5}
@@ -335,7 +396,7 @@ export default function MissionPlanner() {
                                         position={[base.lat, base.lng]}
                                         icon={baseIcon}
                                     >
-                                        <Popup>
+                                        <Popup autoClose={false}>
                                             <div className="p-2">
                                                 <h3 className="font-semibold text-sm mb-1">
                                                     {base.name}

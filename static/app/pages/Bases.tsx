@@ -34,7 +34,7 @@ function MapCenterController({ center }: { center: [number, number] | null }) {
 
     useEffect(() => {
         if (center) {
-            map.setView(center, 13, { animate: true });
+            map.flyTo(center, 13, { animate: true });
         }
     }, [center, map]);
 
