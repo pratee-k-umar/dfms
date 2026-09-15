@@ -61,6 +61,7 @@ module.exports = (env, argv) => {
         plugins: [
             new HtmlWebpackPlugin({
                 template: "./static/app/index.html",
+                favicon: path.resolve(__dirname, "static/app/public/favicon.png"),
                 inject: "body",
             }),
         ],
